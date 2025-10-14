@@ -1,119 +1,126 @@
-# brandmastv2
+# 🌐 Next.js Brandmaster Dashboard
 
-A Next.js (TypeScript) web application.  
-
-This repository is structured using the **app** directory (Next.js App Router), with modular components, utilities, types, and shared assets.
-
----
-
-## Table of Contents
-
-- [Features](#features)  
-- [Tech Stack](#tech-stack)  
-- [Project Structure](#project-structure)  
-  - `app/`  
-  - `components/`  
-  - `lib/`  
-  - `public/`  
-  - `types/`  
-  - `utils/`  
-  - Root files  
-- [Getting Started](#getting-started)  
-- [Scripts](#scripts)  
-- [Environment / Configuration](#environment--configuration)  
-- [Deployment](#deployment)  
-- [How to Contribute](#how-to-contribute)  
-- [License](#license)
+A **Next.js (TypeScript) web application** for Brandmaster and Supervisor dashboards.  
+This SPA/SSR app provides role-based pages, interactive dashboards, reports, and data visualizations with reusable UI components and serverless API calls.
 
 ---
 
-## Features
-
-- Built with Next.js App Router
-- TypeScript throughout
-- Modular component-based architecture
-- Utility functions and types centrally managed
-- Static assets served from `public/`
-- (Add here: any domain-specific features of your app — e.g. branding, CMS integration, auth, etc.)
-
----
-
-## Tech Stack
-
-- **Framework**: Next.js  
-- **Language**: TypeScript  
-- **Styling / CSS**: (if applicable — e.g. Tailwind, CSS Modules, SCSS, etc.)  
-- **Others**: (e.g. Fetch, Axios, Zustand, etc. — list the key libraries used)  
-
----
-
-
-Below is a breakdown of each:
-
-### `app/`
-
-This is the Next.js **App Router** folder. It contains your pages, layouts, and route-level components.  
-For example:
-
-- `app/page.tsx` — The root page (index) of your application  
-- `app/...` — Other route folders and files (e.g. `app/about`, `app/dashboard`, etc.)  
-- `app/layout.tsx` — The root layout that wraps all pages  
-- Optionally, `app/loading.tsx` or `app/error.tsx` for loading/error UI  
-
-### `components/`
-
-Reusable UI components go here — e.g.:
-
-- Buttons, cards, modals, headers, footers, etc.  
-- Larger composed components (e.g. a navbar, sidebar, or hero section)  
-
-### `lib/`
-
-Library / helper modules, such as:
-
-- API clients  
-- Data fetching utilities  
-- Configuration helpers  
-- Abstractions over external services  
-
-### `public/`
-
-Static assets served at root (public) path. Examples:
-
-- Images (logos, icons)  
-- Fonts  
-- Favicon  
-- Any other static files you want to serve  
-
-You can reference them like `/logo.png`, etc. in your code.
-
-### `types/`
-
-TypeScript type definitions, interfaces, and global types:
-
-- Shared domain models  
-- Prop types  
-- Utility types  
-- External API response types  
-
-### `utils/`
-
-Utility functions and helpers used across the app, e.g.:
-
-- String formatting  
-- Date/time helpers  
-- Validation functions  
-- Other pure helper modules  
-
-### Root-level files
-
-- `.gitignore` — Specifies files and directories to ignore in version control  
-- `components.json` — (custom config / mapping for components)  
-- `next.config.ts` — Next.js configuration  
-- `package.json` — Project dependencies and scripts  
-- `postcss.config.mjs` — PostCSS (if used) config  
-- `tsconfig.json` — TypeScript configuration  
+## 📦 Project Structure
+```
+app/
+├─ layout.tsx # App Router layout
+├─ page.tsx # Main entry page
+├─ AuthGuard.tsx # Route-level authentication guard
+├─ Brandmaster/ # Brandmaster-specific pages & components
+├─ Supervisor/ # Supervisor-specific pages & components
+├─ Login/ # Login page
+├─ NotAuthorized/ # 403 page
+components/
+├─ ActionCard.tsx
+├─ BmActionCard.tsx
+├─ MapPicker.tsx
+├─ DatePickerInput.tsx
+├─ TimeInputs.tsx
+├─ AddressInput.tsx
+├─ LoadingScreen.tsx
+├─ contextMenu.tsx
+└─ ui/ # UI primitives library (button, input, card, table...)
+utils/
+├─ apiFetch.ts # API wrapper
+├─ datestuff.ts # Date helpers
+├─ colors.ts # Color constants
+lib/
+├─ utils.ts # Generic helper functions
+app/config.ts # App-level config
+types/ # Domain type definitions
+public/ # Static assets
+next.config.ts # Next.js config
+tsconfig.json
+postcss.config.mjs
+vercel.json
+package.json
+```
 
 ---
 
+## 🏗️ System Architecture
 
+### Main Components
+
+| Layer | Components | Responsibility |
+|-------|------------|----------------|
+| **Routing & Layout** 🔵 | `app/layout.tsx`, `app/page.tsx`, App Router | Nested routing & SSR/SSG |
+| **Authentication** 🔒 | `AuthGuard.tsx` | Protects role-based pages |
+| **Brandmaster Pages** 🔵 | `/app/Brandmaster/...` | Dashboards, action details, reports, stats |
+| **Supervisor Pages** 🔵 | `/app/Supervisor/...` | Dashboards, shops, targets, team |
+| **UI Components** 🔹 | `components/*`, `components/ui/*` | Reusable primitives & composite widgets |
+| **Utilities** 🟣 | `utils/apiFetch.ts`, `utils/datestuff.ts`, `lib/utils.ts` | API wrapper, helpers, date utils |
+| **Types & Config** 🟢 | `types/*`, `app/config.ts` | Domain models, app-level configuration |
+| **Static Assets** 🌐 | `public/` | Images, icons, other static files |
+| **Hosting & Deployment** 🟠 | Vercel | Serverless deployment, CDN delivery |
+
+---
+
+### 🔄 Data & Interaction Flow
+
+```mermaid
+flowchart LR
+    User[👤 Browser] -->|Request page| NextJs[🔵 Next.js SSR/CSR]
+    NextJs -->|Check auth| AuthGuard[🔒 AuthGuard]
+    AuthGuard -->|Render role-based page| Pages[🔵 Brandmaster/Supervisor Pages]
+    Pages -->|Use components| UI[🔹 UI Components]
+    Pages -->|Call API| ApiFetch[🟣 apiFetch utility]
+    ApiFetch -->|Fetch JSON| ExternalAPI[🟢 External API]
+    ExternalAPI --> ApiFetch
+    ApiFetch --> Pages
+    NextJs -->|Load static| Public[🌐 Public assets]
+    NextJs -->|Deploy| Vercel[🟠 Vercel Hosting]
+
+    subgraph Config & Types
+        Config[app/config.ts]
+        Types[types/*]
+    end
+
+    Pages --> Config
+    Pages --> Types
+```
+
+**Highlights**:
+
+- **Component-based UI:** atomic and composite components
+
+- **Next.js App Router:** nested layouts and route protection
+
+- **Central API wrapper:** apiFetch handles all external calls
+
+- **TypeScript domain models:** ensures type safety
+
+- **Serverless deployment:** hosted on Vercel with static asset CDN
+
+
+⚡ **Key Technologies**
+
+- Next.js (App Router, SSR/SSG)
+
+- **React + TypeScript**
+
+- **Vercel serverless hosting**
+
+- **PostCSS:** styling pipeline
+
+- **Utility modules:** ```apiFetch, datestuff, lib/utils```
+
+
+📌 **Notes**
+
+- Role-based pages: Brandmaster and Supervisor modules
+
+- Layout wraps all nested pages and manages global styles
+
+- AuthGuard ensures protected routes based on login state
+
+- Components are split into primitives (ui/*) and composite widgets
+
+- External API calls are centralized via utils/apiFetch.ts
+
+- Static assets served from /public using Vercel CDN

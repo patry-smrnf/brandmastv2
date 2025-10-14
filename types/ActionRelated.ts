@@ -1,21 +1,20 @@
 export interface Action {
-    idAction: number,
-    shopID: number,
-    shopAddress: string,
-    shopName: string,
-    shopTPId?: string,
-    shopTPIdent?: string,
-    eventName: string,
-    actionSince: Date,
-    actionUntil: Date,
-    actionStatus?:string 
-    brandmasterID?: number,
-    brandmasterTPID?: string,
-    brandmasterImie?: string,
-    brandmasterNazwisko?: string,
-    brandmasterLogin?: string,
+  idAction: number;
+  shopID: number;
+  shopAddress: string;
+  shopName: string;
+  shopTPId?: string;
+  shopTPIdent?: string;
+  eventName: string;
+  actionSince: string; // ✅ <-- changed
+  actionUntil: string; // ✅ <-- changed
+  actionStatus?: string;
+  brandmasterID?: number;
+  brandmasterTPID?: string;
+  brandmasterImie?: string;
+  brandmasterNazwisko?: string;
+  brandmasterLogin?: string;
 }
-
 export interface ActionDetail {
     idAction: number,
     shopID: number,

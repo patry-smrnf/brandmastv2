@@ -1,16 +1,13 @@
+// file: components/DatePickerInput.tsx
 "use client";
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from "@/components/ui/popover";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 
-export default function DatePickerInput({value,onChange,}: {value: Date | undefined; onChange: (date: Date) => void;}) {
+export default function DatePickerInput({ value, onChange }: { value: Date | undefined; onChange: (date: Date) => void; }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -18,16 +15,15 @@ export default function DatePickerInput({value,onChange,}: {value: Date | undefi
       <PopoverTrigger asChild>
         <Button
           variant="outline"
-          className={`w-full justify-start text-left font-normal ${
-            value ? "text-white" : "text-gray-400"
-          } bg-zinc-700 border-zinc-600 hover:border-gray-900 hover:bg-zinc-200`}
+          className={`w-full justify-start text-left font-normal ${value ? "text-white" : "text-gray-400"} bg-zinc-700 border-zinc-600`}
         >
           {value ? format(value, "PPP") : "Pick a date"}
-          
         </Button>
       </PopoverTrigger>
+
+      {/* Ensure popover content has high z-index so it sits above the map */}
       <PopoverContent
-        className="w-auto p-0 bg-zinc-900 border border-zinc-700 rounded-lg shadow-lg"
+        className="w-auto p-0 bg-zinc-900 border border-zinc-700 rounded-lg shadow-lg z-50"
         align="start"
       >
         <Calendar
@@ -35,7 +31,6 @@ export default function DatePickerInput({value,onChange,}: {value: Date | undefi
           selected={value}
           onSelect={(date) => {
             if (date) {
-              console.log(date);
               onChange(date);
               setOpen(false);
             }

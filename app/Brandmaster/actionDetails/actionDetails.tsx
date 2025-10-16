@@ -1,327 +1,379 @@
-"use client" 
+// file: components/ActionDetails.tsx (or wherever you keep it)
+"use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-import {Button} from "@/components/ui/button"
-import {Label} from "@/components/ui/label"
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 
 import { ArrowLeft } from "lucide-react";
 
 import { ActionDetail } from "@/types/ActionRelated";
 import { shopRes } from "@/types/Shops";
 import { newActionPayload, updateActionPayload } from "@/types/UpdateAction";
-import {messageRes } from "@/types/MessageRes";
+import { messageRes } from "@/types/MessageRes";
 
 import { toast } from "sonner";
 
 import AddressInput from "@/components/AddressInput";
-import TimeInputs from "@/components/TimeInputs"
-import DatePickerInput from '@/components/DatePickerInput'
+import TimeInputs from "@/components/TimeInputs";
+import DatePickerInput from "@/components/DatePickerInput";
 import { apiFetch } from "@/utils/apiFetch";
 import ContextMenu from "@/components/contextMenu";
 
-import { DateTime } from 'luxon';
+import { DateTime } from "luxon";
 
-//Shit to craft new date
-function formatDate (date: Date): string { 
-    const year = date.getFullYear();
-    const month = (date.getMonth() + 1).toString().padStart(2, '0');
-    const day = date.getDate().toString().padStart(2, '0');
-    return `${year}-${month}-${day}`;
+enum LoadType {
+  NEW_ACTION,
+  EDIT_ACTION,
+  UNKNOWN,
+}
+
+/* -- Helpers -- */
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function normalizeTime(input: string): string {
-    // Trim whitespace
-    const str = input.trim();
+  const str = input.trim();
 
-    // If it's just an hour (e.g., "9" or "09")
-    if (/^\d{1,2}$/.test(str)) {
-        return str.padStart(2, '0') + ':00';
+  if (/^\d{1,2}$/.test(str)) {
+    const h = Number(str);
+    if (h < 0 || h > 23) throw new Error("Hour out of range");
+    return String(h).padStart(2, "0") + ":00";
+  }
+
+  if (/^\d{1,2}:\d{1,2}$/.test(str)) {
+    const [hStr, mStr] = str.split(":");
+    const h = Number(hStr);
+    const m = Number(mStr);
+    if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+      throw new Error(`Invalid time values: ${input}`);
     }
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
 
-    // If it's hour and minute (e.g., "14:00" or "9:5")
-    if (/^\d{1,2}:\d{1,2}$/.test(str)) {
-        const [h, m] = str.split(':');
-        return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
+  if (/^\d{1,2}:\d{1,2}:\d{1,2}$/.test(str)) {
+    const [hStr, mStr, sStr] = str.split(":");
+    const h = Number(hStr);
+    const m = Number(mStr);
+    if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
+      throw new Error(`Invalid time values: ${input}`);
     }
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
 
-    // If it's hour:minute:second (e.g., "14:00:00"), ignore seconds
-    if (/^\d{1,2}:\d{1,2}:\d{1,2}$/.test(str)) {
-        const [h, m] = str.split(':');
-        return `${h.padStart(2, '0')}:${m.padStart(2, '0')}`;
-    }
-
-    toast.warning(`Invalid time format: "${input}"`);
-    throw new Error(`Invalid time format: "${input}"`);
+  throw new Error(`Invalid time format: "${input}"`);
 }
 
-function combineDateTime(date: string, time: string): string | null {
-  // date: "2025-10-09" (from <input type="date">)
-  // time: "14:30:15" (from <input type="time">)
-  if (!date || !time) return null; // handle empty input
+/**
+ * Combine date ("YYYY-MM-DD") and time ("HH:MM" or "HH:MM:SS") into ISO with Europe/Warsaw offset.
+ * Returns null if missing date/time.
+ */
+function combineDateTime(date: string | null | undefined, time: string | null | undefined): string | null {
+  if (!date || !time) return null;
 
-  // Split time into parts
-  const [hours, minutes, seconds] = time.split(':').map(Number);
+  const timeParts = time.split(":").map((p) => Number(p));
+  const hours = timeParts[0] ?? 0;
+  const minutes = timeParts[1] ?? 0;
+  const seconds = timeParts[2] ?? 0;
 
-  // Create a DateTime in Warsaw timezone
+  if ([hours, minutes, seconds].some((v) => Number.isNaN(v))) return null;
+
+  const [yearStr, monthStr, dayStr] = date.split("-");
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+
   const dt = DateTime.fromObject(
-    {
-      year: Number(date.split('-')[0]),
-      month: Number(date.split('-')[1]),
-      day: Number(date.split('-')[2]),
-      hour: hours,
-      minute: minutes,
-      second: seconds,
-    },
-    { zone: 'Europe/Warsaw' }
+    { year, month, day, hour: hours, minute: minutes, second: seconds },
+    { zone: "Europe/Warsaw" }
   );
 
-  // Convert to ISO offset string (backend-friendly)
-  return dt.toISO(); // example: 2025-10-09T14:30:15+02:00
+  if (!dt.isValid) return null;
+  return dt.toISO();
 }
 
-enum loadType { NEW_ACTION, EDIT_ACTION, UNKNOWN } 
+/* -- Component -- */
+export default function ActionDetails() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-export default function actionDetails() {
-    const router = useRouter();
-    const searchParams = useSearchParams();
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [typeOfLoad, setTypeOfLoad] = useState<LoadType>(LoadType.NEW_ACTION);
+  const [theActionID, setActionID] = useState<number | undefined>(undefined);
 
-    //Logic of site
-    const [loading, setLoading] = useState(false);
-    const [saving, setSaving] = useState(false);
-    const [typeOfLoad, setTypeOfLoad] = useState<loadType>(loadType.NEW_ACTION);
-    const [theActionID, setActionID] = useState<number>();
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const toggleMenu = useCallback(() => setMenuOpen((v) => !v), []);
 
-    const menuRef = useRef<HTMLDivElement | null>(null);
-    const [menuOpen, setMenuOpen] = useState(false);
-    const toggleMenu = useCallback(() => setMenuOpen((v) => !v), []);
+  const [actionDetails, setActionDetails] = useState<ActionDetail | undefined>(undefined);
+  const [shopsData, setShopsData] = useState<shopRes[] | undefined>(undefined);
 
-    //ServerData
-    const [actionDetails, setActionDetails] = useState<ActionDetail>();
-    const [shopsData, setShopsData] = useState<shopRes[]>();
+  // Form data
+  const [shopAddress, setShopAddress] = useState("");
+  const [shopID, setShopID] = useState<number>(0);
+  const [actionDate, setActionDate] = useState<Date>(new Date());
+  const [systemStart, setSystemStart] = useState("");
+  const [systemEnd, setSystemEnd] = useState("");
+  const [realStart, setRealStart] = useState("");
+  const [realEnd, setRealEnd] = useState("");
 
-    //Form DATA
-    const [shopAddress, setShopAddress] = useState("");
-    const [shopID, setShopID] = useState(0);
-    const [actionDate, setActionDate] = useState<Date>(new Date());
-    const [systemStart, setSystemStart] = useState("");
-    const [systemEnd, setSystemEnd] = useState("");
-    const [realStart, setRealStart] = useState("");
-    const [realEnd, setRealEnd] = useState("");
-   
-    //Fetching data from the Server here
-    useEffect(() => {
-        const newActionParam = searchParams.get("newAction");
-        const actionIdParam = searchParams.get("actionId");
+  useEffect(() => {
+    let aborted = false;
+    const ac = new AbortController();
 
-        const isNewAction = !!newActionParam;
-        const actionID = actionIdParam ? parseInt(actionIdParam, 10) : NaN;
+    const newActionParam = searchParams.get("newAction");
+    const actionIdParam = searchParams.get("actionId");
 
-        // Invalid combinations
-        if ((isNewAction && !isNaN(actionID)) || (!isNewAction && isNaN(actionID))) {
-            const uri = "/?error=Blad przy wchodzeniu w panel akcji, nie jest okreslone czy to nowa czy edycja istniejacej";
-            router.push(encodeURI(uri));
+    const isNewAction = !!newActionParam;
+    const actionID = actionIdParam ? Number.parseInt(actionIdParam, 10) : NaN;
+
+    // invalid combinations
+    if ((isNewAction && !Number.isNaN(actionID)) || (!isNewAction && Number.isNaN(actionID))) {
+      router.push(encodeURI("/?error=Blad przy wchodzeniu w panel akcji, nie jest okreslone czy to nowa czy edycja istniejacej"));
+      return;
+    }
+
+    async function fetchShops() {
+      try {
+        const res = await apiFetch<shopRes[]>("/api/general/getAllShops", {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          signal: ac.signal as any,
+        });
+        if (aborted) return;
+        setShopsData(res);
+      } catch (err) {
+        if (!ac.signal.aborted) toast.error(String(err));
+      }
+    }
+
+    async function fetchActionDetails(id: number) {
+      setLoading(true);
+      try {
+        const res = await apiFetch<ActionDetail>("/api/bm/detailsAction", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ idAction: id }),
+          signal: ac.signal as any,
+        });
+        if (aborted) return;
+
+        setActionDetails(res);
+        setShopAddress(res.shopAddress ?? "");
+        setShopID(res.shopID ?? 0);
+
+        // if API gives ISO string, new Date(...) will parse it; guard if it's already Date
+        const sinceDate = res.since ? new Date(res.since as any) : null;
+        const untilDate = res.until ? new Date(res.until as any) : null;
+
+        if (sinceDate && !Number.isNaN(sinceDate.getTime())) {
+          const hoursSince = String(sinceDate.getHours()).padStart(2, "0");
+          const minsSince = String(sinceDate.getMinutes()).padStart(2, "0");
+          const secsSince = String(sinceDate.getSeconds()).padStart(2, "0");
+          setSystemStart(`${hoursSince}:${minsSince}:${secsSince}`);
+          setActionDate(sinceDate);
+        }
+
+        if (untilDate && !Number.isNaN(untilDate.getTime())) {
+          const hoursUntil = String(untilDate.getHours()).padStart(2, "0");
+          const minsUntil = String(untilDate.getMinutes()).padStart(2, "0");
+          const secsUntil = String(untilDate.getSeconds()).padStart(2, "0");
+          setSystemEnd(`${hoursUntil}:${minsUntil}:${secsUntil}`);
+        }
+      } catch (err) {
+        if (!ac.signal.aborted) {
+          toast.error(String(err));
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // initial fetches
+    fetchShops();
+
+    if (!isNewAction) {
+      setTypeOfLoad(LoadType.EDIT_ACTION);
+      if (!Number.isNaN(actionID)) {
+        setActionID(actionID);
+        fetchActionDetails(actionID);
+      }
+    } else {
+      setTypeOfLoad(LoadType.NEW_ACTION);
+    }
+
+    return () => {
+      aborted = true;
+      ac.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]); // intentionally only when search params change
+
+  const submitForm = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+
+      if (saving) return;
+      setSaving(true);
+
+      try {
+        let resolvedShopId = shopID;
+
+        if (resolvedShopId === 0) {
+          const normalizedAddress = shopAddress.trim().toLowerCase();
+          const found = shopsData?.find((s) => s.addressShop.trim().toLowerCase() === normalizedAddress);
+          if (found) resolvedShopId = found.idShop;
+          else {
+            toast.error("[Frontend]: Nie istnieje sklep z takim adresem");
             return;
+          }
         }
 
-        const fetchAkcjaDetails = async() => {
-            try {
-                const res = await apiFetch<ActionDetail>('/api/bm/detailsAction', {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json"},
-                    body: JSON.stringify({
-                        idAction: actionID
-                    })
-                });
-
-                setActionDetails(res);
-                setShopAddress(res.shopAddress);
-                setShopID(res.shopID);
-
-                const sinceDateTemp = new Date(res.since);
-                const untilDateTemp = new Date(res.until);
-
-                const hoursSince = String(sinceDateTemp.getUTCHours() + 2).padStart(2, '0'); // add offset if needed
-                const minutesSince = String(sinceDateTemp.getUTCMinutes()).padStart(2, '0');
-                const secondsSince = String(sinceDateTemp.getUTCSeconds()).padStart(2, '0');
-
-                
-                const hoursUntil = String(untilDateTemp.getUTCHours() + 2).padStart(2, '0'); // add offset if needed
-                const minutesUntil = String(untilDateTemp.getUTCMinutes()).padStart(2, '0');
-                const secondsUntil = String(untilDateTemp.getUTCSeconds()).padStart(2, '0');
-
-                const year = sinceDateTemp.getFullYear();
-                const month = String(sinceDateTemp.getMonth() + 1).padStart(2, '0'); // months are 0-indexed
-                const day = String(sinceDateTemp.getDate()).padStart(2, '0');
-                const formattedDate = `${year}-${month}-${day}`;
-
-                setSystemStart(`${hoursSince}:${minutesSince}:${secondsSince}`);
-                setSystemEnd(`${hoursUntil}:${minutesUntil}:${secondsUntil}`)
-
-                setActionDate(new Date(formattedDate));
-
-
-            }catch(erorr){
-                toast.error('' + erorr);
-            }
-            
-
-        };
-
-        const fetchShops = async() => {
-            try {
-                const res = await apiFetch<shopRes[]>('/api/general/getAllShops', {
-                    method: "GET",
-                    headers: { "Content-Type": "application/json"}
-                });
-
-                setShopsData(res);
-            } catch(error) {
-                toast.error(error + '');
-            }
+        if (!systemStart || !systemEnd || !shopAddress) {
+          toast.error("[Frontend]: Missing data");
+          return;
         }
 
-        // Fetch data based on case
-        if (!isNewAction) {
-            setTypeOfLoad(loadType.EDIT_ACTION);
-            setActionID(actionID);
-            fetchAkcjaDetails();
-        }
-        fetchShops();  
-
-    }, [searchParams]);
-
-
-    const submitForm = useCallback(async (e: React.FormEvent<HTMLFormElement>) => { e.preventDefault();
-        let shopID_local = shopID;
-
-        //Check if shopid is found, case if user type address of shop manually
-        if(shopID === 0) {
-            const normalizedAddress = shopAddress.trim().toLowerCase();
-
-            const found = shopsData?.find(
-                shop => shop.addressShop.trim().toLowerCase() === normalizedAddress
-            );
-
-            if(found) {
-                shopID_local = found.idShop;
-            }
-            else {
-                toast.error("[Frontend]: Nie istnieje sklep z takim adresem")
-                return ;
-            }
+        // Validate times: normalize and ensure start <= end
+        let normalizedStart: string;
+        let normalizedEnd: string;
+        try {
+          normalizedStart = normalizeTime(systemStart);
+          normalizedEnd = normalizeTime(systemEnd);
+        } catch (err) {
+          toast.error(String(err));
+          return;
         }
 
-        //Basic time stuff
-        const dateString = formatDate(actionDate);
-
-        //Check if the hours typed correctly
-        if(systemEnd < systemStart) {
-            toast.error("[Frontend]: Nie mozna konczyc potem zaczac lol")
-            return ;
+        // Compare times (HH:MM[:SS]) reliably
+        const dateStr = formatDate(actionDate);
+        const startISO = combineDateTime(dateStr, normalizedStart);
+        const endISO = combineDateTime(dateStr, normalizedEnd);
+        if (!startISO || !endISO) {
+          toast.error("[Frontend]: Could not combine date and time");
+          return;
+        }
+        if (DateTime.fromISO(endISO) < DateTime.fromISO(startISO)) {
+          toast.error("[Frontend]: Nie mozna konczyc potem zaczac");
+          return;
         }
 
-        if(systemEnd==="" || systemStart==="" || shopAddress ==="") {
-            toast.error("[Frontend]: Missing data")
-            return ;
+        if (typeOfLoad === LoadType.NEW_ACTION) {
+          const payload: newActionPayload = {
+            idShop: resolvedShopId,
+            sinceSystem: startISO,
+            untilSystem: endISO,
+          };
+          const res = await apiFetch<messageRes>("/api/bm/addAction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          toast.success(res.message);
+          // optional: navigate back after success
+          // router.push("/");
+        } else if (typeOfLoad === LoadType.EDIT_ACTION) {
+          if (!actionDetails) {
+            toast.error("Missing action details");
+            return;
+          }
+          const payload: updateActionPayload = {
+            idAction: actionDetails.idAction,
+            idShop: resolvedShopId,
+            sinceSystem: startISO,
+            untilSystem: endISO,
+          };
+          const res = await apiFetch<messageRes>("/api/bm/editAction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          toast.success(res.message);
         }
-        
-        //NewAction TypeShit
-        if(typeOfLoad === loadType.NEW_ACTION) {
-            const payload: newActionPayload = {
-                idShop: shopID_local,
-                sinceSystem: combineDateTime(dateString, normalizeTime(systemStart)),
-                untilSystem: combineDateTime(dateString, normalizeTime(systemEnd))
-            };
+      } catch (err) {
+        toast.error(String(err));
+      } finally {
+        setSaving(false);
+      }
+    },
+    [shopID, actionDate, systemStart, systemEnd, shopAddress, shopsData, typeOfLoad, actionDetails, saving]
+  );
 
-            try {
-                const res = apiFetch<messageRes>("/api/bm/addAction", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(payload)
-                });
+  return (
+    <>
+      <div ref={menuRef} className="fixed top-4 right-4 z-50" onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={toggleMenu}
+          aria-label="Toggle menu"
+          className="w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center focus:outline-none"
+          type="button"
+        >
+          <svg className="w-6 h-6 text-gray-700" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
+            <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z" />
+          </svg>
+        </button>
+        {menuOpen && <ContextMenu closeMenu={() => setMenuOpen(false)} type={"BM"} />}
+      </div>
 
-                toast.success((await res).message);
-                
-            }catch (error) {
-                toast.error(error + '');
-            }
+      <div
+        className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-900 to-black text-gray-100 px-6 py-10 flex flex-col items-center"
+        aria-busy={loading}
+      >
+        <div className="w-full max-w-xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-lg rounded-xl p-6 sm:p-8 shadow-2xl">
+          <div className="mb-6">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/")}
+              className="text-gray-400 hover:text-white hover:bg-zinc-900 flex items-center gap-2 px-0"
+              aria-label="Back to dashboard"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-sm">Back to Dashboard</span>
+            </Button>
+          </div>
 
-        }
-        if(typeOfLoad === loadType.EDIT_ACTION) {
-            if(!actionDetails){
-                toast.error("error");
-                return;
-            }
+          {loading && <div className="mb-4 text-center text-sm text-gray-300">Loading...</div>}
 
-            const payload: updateActionPayload = {
-                idAction: actionDetails?.idAction,
-                idShop: shopID_local,
-                sinceSystem: combineDateTime(dateString, normalizeTime(systemStart)),
-                untilSystem: combineDateTime(dateString, normalizeTime(systemEnd))
-            }
-
-            try {
-                const res = apiFetch<messageRes>("/api/bm/editAction", {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json"
-                    },
-                    body: JSON.stringify(payload)
-                });
-                toast.success((await res).message);
-            } catch(error) {
-                toast.error(error + '');
-            }
-        }
-
-    }, [shopID, actionDate, systemStart, systemEnd, realStart, realEnd, shopAddress, shopsData]) 
-
-    return (
-        <>
-            {/* Context menu button (top-right) */}
-            <div ref={menuRef} className="fixed top-4 right-4 z-50" onClick={(e) => e.stopPropagation()}>
-              <button onClick={toggleMenu} aria-label="Toggle menu" className="w-10 h-10 bg-white rounded-full shadow-md flex items-center justify-center focus:outline-none" type="button">
-                <svg className="w-6 h-6 text-gray-700" fill="currentColor" viewBox="0 0 20 20" aria-hidden>
-                  <path d="M6 10a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0zm6 0a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </button>
-              {menuOpen && <ContextMenu closeMenu={() => setMenuOpen(false)} type={"BM"} />}
+          <form onSubmit={submitForm} className="space-y-5" noValidate>
+            <div>
+              <Label htmlFor="date" className="text-sm text-gray-300 mb-1 block">
+                Event Date
+              </Label>
+              {/* Ensure Popover/Calendar has higher z-index so map doesn't intercept clicks */}
+              <DatePickerInput value={actionDate} onChange={setActionDate} />
             </div>
-            <div className="min-h-screen bg-gradient-to-b from-zinc-950 via-zinc-900 to-black text-gray-100 px-6 py-10 flex flex-col items-center" aria-busy={loading}>
-                <div className="w-full max-w-xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-lg rounded-xl p-6 sm:p-8 shadow-2xl">
-                    <div className="mb-6">
-                        <Button variant="ghost" size="sm" onClick={() => router.push("/")} className="text-gray-400 hover:text-white hover:bg-zinc-900 flex items-center gap-2 px-0" aria-label="Back to dashboard">
-                            <ArrowLeft className="w-4 h-4" />
-                            <span className="text-sm">Back to Dashboard</span>
-                        </Button>
-                    </div>
-                    {loading && <div className="mb-4 text-center text-sm text-gray-300">Loading...</div>}
-                    <form onSubmit={submitForm} className="space-y-5" noValidate>
-                        <div>
-                            <Label htmlFor="date" className="text-sm text-gray-300 mb-1 block">
-                                Event Date
-                            </Label>
-                            <DatePickerInput value={actionDate} onChange={setActionDate} />
-                        </div>
 
-                        <AddressInput value={shopAddress} onChange={setShopAddress} onChangeID={setShopID} shopsResponse={shopsData}/>
-                        <TimeInputs time1={systemStart} time1Name="Start" onTime1Change={setSystemStart} time2={systemEnd}  time2Name="Stop" onTime2Change={setSystemEnd}/>
-                        <Button
-                            type="submit"
-                            variant="default"
-                            className="w-full  text-base bg-green-900 hover:bg-green-700"
-                            disabled={saving}
-                            aria-disabled={saving}
-                            >
-                            {saving ? "Saving..." : "Save Changes"}
-                        </Button>
-                    </form>
-                </div>
-            </div>
-        </>
-    )
+            <AddressInput value={shopAddress} onChange={setShopAddress} onChangeID={setShopID} shopsResponse={shopsData} />
+
+            <TimeInputs
+              time1={systemStart}
+              time1Name="Start"
+              onTime1Change={setSystemStart}
+              time2={systemEnd}
+              time2Name="Stop"
+              onTime2Change={setSystemEnd}
+            />
+
+            <Button
+              type="submit"
+              variant="default"
+              className="w-full text-base bg-green-900 hover:bg-green-700"
+              disabled={saving}
+              aria-disabled={saving}
+            >
+              {saving ? "Saving..." : "Save Changes"}
+            </Button>
+          </form>
+        </div>
+      </div>
+    </>
+  );
 }
